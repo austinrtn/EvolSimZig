@@ -5,6 +5,7 @@ const SmartSoa = @import("SmartSoA").SmartSoA;
 const lua = @import("lua");
 
 const Config = @import("config.zig").Config;
+const EntDb = @import("EntDb.zig").EntDb;
 const Spec = @import("Spec.zig").Spec;
 
 pub fn main(init: std.process.Init) !void {
@@ -28,17 +29,21 @@ pub fn main(init: std.process.Init) !void {
     initRaylib(config);
     defer raylib.closeWindow();
 
-    var specs = SmartSoa(Spec).init();
-    defer specs.deinit(allocator);
+    var db = EntDb.init(allocator);
+    defer db.deinit();
+
+    const specs = &db.ent_data.specs;
+
+    try Spec.spawn(allocator, io, specs, config);
 
     while(!raylib.windowShouldClose()) {
-        raylib.clearBackground(.ray_white);
-
         raylib.beginDrawing();
         defer raylib.endDrawing();
 
-        Spec.move(&specs, raylib.getFrameTime());
-        Spec.draw(&specs);
+        raylib.clearBackground(.ray_white);
+
+        Spec.move(specs, raylib.getFrameTime());
+        Spec.draw(specs);
     }
 }
 

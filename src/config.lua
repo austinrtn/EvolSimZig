@@ -1,4 +1,4 @@
-local pad = 100
+local pad = 0
 
 local config = {
     window_width = 800,
@@ -14,8 +14,8 @@ local config = {
     max_vel=  12,
 }
 
-config.min_x = config.window_width - pad
-config.min_y = config.window_height - pad
+config.min_x = -pad
+config.min_y = -pad
 config.max_x = config.window_width + pad
 config.max_y = config.window_height + pad
 
