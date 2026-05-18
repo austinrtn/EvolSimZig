@@ -10,7 +10,7 @@ const Spec = @import("Spec.zig").Spec;
 pub fn main(init: std.process.Init) !void {
     const allocator = init.gpa;
     const io = init.io;
-    
+
     var config: Config = undefined;
     const L = try initLua(&config);
     defer lua.lua_close(L);
@@ -24,22 +24,13 @@ pub fn main(init: std.process.Init) !void {
         .cell_size_multiplier = 2,
     });
     defer grid.deinit();
-    
+
     initRaylib(config);
     defer raylib.closeWindow();
 
     var specs = SmartSoa(Spec).init();
     defer specs.deinit(allocator);
-    
-    _ = try specs.append(allocator, .{
-       .x = 25,  
-       .y = 25,
-       .xvel = 4,
-       .yvel = 4, 
-       .color = .red,
-       .r = 32,
-    });
-    
+
     while(!raylib.windowShouldClose()) {
         raylib.clearBackground(.ray_white);
 
@@ -48,8 +39,6 @@ pub fn main(init: std.process.Init) !void {
 
         Spec.move(&specs, raylib.getFrameTime());
         Spec.draw(&specs);
-
-        raylib.drawText("Hello world!", 500, 500, 12, .black);
     }
 }
 
@@ -68,26 +57,27 @@ fn initLua(config: *Config) !*lua.struct_lua_State {
         lua.lua_close(L);
         return error.FailedLoadingLuaFile;
     }
-    
+
     if(lua.lua_pcall(L, 0, 1, 0) != lua.LUA_OK) {
         lua.lua_close(L);
         return error.FailedLuaPcall;
     }
-    
+
     inline for(std.meta.fields(Config)) |field| {
         _ = lua.lua_getfield(L, -1, field.name);
         const T = @FieldType(Config, field.name);
-        
+
         var val: T = undefined;
         if(T == []const u8) val = lua.lua_tostring(L, -1)
         else {
             val = switch(@typeInfo(T)) {
                 .int => @intCast(lua.lua_tointeger(L, -1)),
+                .float => @floatCast(lua.lua_tonumber(L, -1)),
                 .bool => lua.lua_toboolean(L, -1),
                 else => {},
             };
         }
-        
+
         lua.lua_pop(L, 1);
         @field(config, field.name) = val;
     }
