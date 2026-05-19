@@ -3,6 +3,7 @@ const raylib = @import("raylib");
 const SpecSoa = @import("SmartSoA").SmartSoA(Spec);
 const lua = @import("lua");
 const Config = @import("config.zig").Config;
+const EntDb = @import("EntDb.zig").EntDb;
 
 pub const Spec = struct {
     const colors = [_]raylib.Color{.black, .red, .pink, .blue, .green, .purple,};
@@ -34,7 +35,8 @@ pub const Spec = struct {
         _ = specs; _ = grid;
     }
 
-    pub fn spawn(allocator: std.mem.Allocator, io: std.Io, specs: *SpecSoa, config: Config) !void {
+    pub fn spawn(allocator: std.mem.Allocator, io: std.Io, ent_db: *EntDb, config: Config) !void {
+        const specs = ent_db.ent_data.specs;
         try specs.ensureTotalCapacity(allocator, config.ent_count);
         const rand = std.Random.IoSource{.io = io};
         const rng = rand.interface();
@@ -59,7 +61,7 @@ pub const Spec = struct {
                 .color = color
             };
 
-            try specs.append(allocator, spec);
+            try ent_db.append(specs.len, .specs, spec); 
         }
     }
 };
