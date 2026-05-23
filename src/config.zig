@@ -15,4 +15,5 @@ pub const Config = struct {
 
     min_vel: f32,
     max_vel: f32,
+    show_fps: bool,
 };

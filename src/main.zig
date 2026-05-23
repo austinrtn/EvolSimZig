@@ -5,12 +5,15 @@ const SmartSoa = @import("SmartSoA").SmartSoA;
 const lua = @import("lua");
 
 const Config = @import("config.zig").Config;
-const EntDb = @import("EntDb.zig").EntDb;
 const Spec = @import("Spec.zig").Spec;
+const EntDb = @import("EntDb.zig").EntDb(&.{
+    .{ .name = "specs", .T = Spec },
+});
 
 pub fn main(init: std.process.Init) !void {
     const allocator = init.gpa;
     const io = init.io;
+    const fps_box: FpsBox = .{};
 
     var config: Config = undefined;
     const L = try initLua(&config);
@@ -29,28 +32,46 @@ pub fn main(init: std.process.Init) !void {
     initRaylib(config);
     defer raylib.closeWindow();
 
-    var db = EntDb.init(allocator);
+    var db = try EntDb.init(allocator, config.ent_count);
     defer db.deinit();
+    const specs = db.ent_data.specs;
 
-    const specs = &db.ent_data.specs;
+    try Spec.spawn(allocator, io, &db, config);
+    //try Spec.insert(&specs, grid);
 
-    try Spec.spawn(allocator, io, specs, config);
-
+    try grid.updateCellSize(null);
+    //loop
     while(!raylib.windowShouldClose()) {
         raylib.beginDrawing();
         defer raylib.endDrawing();
 
         raylib.clearBackground(.ray_white);
+        const dt = raylib.getFrameTime();
+        const fps = raylib.getFPS();
 
-        Spec.move(specs, raylib.getFrameTime());
+        Spec.move(specs, dt);
         Spec.draw(specs);
+        if(config.show_fps) fps_box.draw(fps);
+        try controller(config, .{.db = &db});
     }
 }
+
+fn controller(config: Config, data: anytype) !void {
+    _ = config;
+    const kp = raylib.getKeyPressed();
+    switch(kp) {
+        .r => {
+            try data.db.removeEnt(0);
+        },
+        else => {},
+    }
+}
+
 
 fn initRaylib(config: Config) void {
     raylib.initWindow(config.window_width, config.window_height, "");
 
-    raylib.setTraceLogLevel(.none);
+    raylib.setTraceLogLevel(.err);
     raylib.setTargetFPS(config.target_fps);
 }
 
@@ -78,7 +99,10 @@ fn initLua(config: *Config) !*lua.struct_lua_State {
             val = switch(@typeInfo(T)) {
                 .int => @intCast(lua.lua_tointeger(L, -1)),
                 .float => @floatCast(lua.lua_tonumber(L, -1)),
-                .bool => lua.lua_toboolean(L, -1),
+                .bool => blk: {
+                        if(lua.lua_toboolean(L, -1) == 0) break :blk false
+                        else break :blk true;
+                },
                 else => {},
             };
         }
@@ -89,3 +113,31 @@ fn initLua(config: *Config) !*lua.struct_lua_State {
 
     return L;
 }
+
+const FpsBox = struct {
+    x: f32 = 0,
+    y: f32 = 0,
+    w: f32 = 25,
+    h: f32 = 25,
+    box_color: raylib.Color = .white,
+    outline_color: raylib.Color = .black,
+
+    font_size: f32 = 16,
+    font_color: raylib.Color = .black,
+
+    fn draw(self: @This(), fps: i32) void {
+        const rect: raylib.Rectangle = .{.x = self.x, .y = self.y, .width = self.w, .height = self.h};
+        raylib.drawRectangleRec(rect, self.box_color);
+        raylib.drawRectangleLinesEx(rect, 1, self.outline_color);
+
+        const font = raylib.getFontDefault() catch unreachable;
+        var buf: [256]u8 = undefined;
+        const fps_text = std.fmt.bufPrintSentinel(&buf, "{d}", .{fps}, 0) catch unreachable;
+        const text_size = raylib.measureTextEx(font, fps_text, self.font_size, 1);
+
+        const text_x = self.x + (self.w - text_size.x) * 0.5;
+        const text_y = self.y + (self.h - text_size.y) * 0.5;
+
+        raylib.drawTextEx(font, fps_text, .{.x = text_x, .y = text_y}, self.font_size, 1, .black);
+    }
+};

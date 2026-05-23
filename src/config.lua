@@ -1,4 +1,4 @@
-local pad = 0
+local pad = -100
 
 local config = {
     window_width = 800,
@@ -11,7 +11,8 @@ local config = {
     max_r = 12,
 
     min_vel = 8,
-    max_vel=  12,
+    max_vel =  12,
+    show_fps = true,
 }
 
 config.min_x = -pad

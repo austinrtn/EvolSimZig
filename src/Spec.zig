@@ -11,6 +11,7 @@ pub const Spec = struct {
     x: f32,
     y: f32,
     r: f32,
+    id: u32,
 
     xvel: f32,
     yvel: f32,
@@ -31,11 +32,7 @@ pub const Spec = struct {
         }
     }
 
-    pub fn insert(specs: *SpecSoa, grid: anytype) !void {
-        _ = specs; _ = grid;
-    }
-
-    pub fn spawn(allocator: std.mem.Allocator, io: std.Io, ent_db: *EntDb, config: Config) !void {
+    pub fn spawn(allocator: std.mem.Allocator, io: std.Io, ent_db: anytype, config: Config) !void {
         const specs = ent_db.ent_data.specs;
         try specs.ensureTotalCapacity(allocator, config.ent_count);
         const rand = std.Random.IoSource{.io = io};
@@ -58,10 +55,16 @@ pub const Spec = struct {
                 .r = r,
                 .xvel = xvel,
                 .yvel = yvel,
-                .color = color
+                .color = color,
+                .id = @intCast(ent_db.len),
             };
 
-            try ent_db.append(specs.len, .specs, spec); 
+            try ent_db.append(@intCast(specs.len), .specs, spec);
         }
     }
+
+    // pub fn insert(specs: *SpecSoa, grid: anytype) !void {
+    //     const s = specs.allItems();
+    //     grid.insert.Circle.many()
+    // }
 };
