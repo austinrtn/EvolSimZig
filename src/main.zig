@@ -6,15 +6,15 @@ const lua = @import("lua");
 
 const Config = @import("config.zig").Config;
 const Spec = @import("Spec.zig").Spec;
-const EntDb = @import("EntDb.zig").EntDb(&.{
-    .{ .name = "specs", .T = Spec },
+const EntDbType = @import("EntDb.zig").EntDb;
+const EntDb = EntDbType(&.{
+    Spec
 });
 
 pub fn main(init: std.process.Init) !void {
     const allocator = init.gpa;
     const io = init.io;
     const fps_box: FpsBox = .{};
-
     var config: Config = undefined;
     const L = try initLua(&config);
     defer lua.lua_close(L);
@@ -34,10 +34,10 @@ pub fn main(init: std.process.Init) !void {
 
     var db = try EntDb.init(allocator, config.ent_count);
     defer db.deinit();
-    const specs = db.ent_data.specs;
+    const specs: *SmartSoa(Spec) = db.ent_data.specs;
 
     try Spec.spawn(allocator, io, &db, config);
-    //try Spec.insert(&specs, grid);
+    try Spec.insert(specs, grid);
 
     try grid.updateCellSize(null);
     //loop
@@ -49,7 +49,27 @@ pub fn main(init: std.process.Init) !void {
         const dt = raylib.getFrameTime();
         const fps = raylib.getFPS();
 
+        Spec.reset(specs);
         Spec.move(specs, dt);
+        try Spec.insert(specs, grid);
+        const results = try grid.update();
+        
+        for(results.items) |pair| {
+            inline for(std.meta.fields(@TypeOf(pair))) |field| {
+                const id = @field(pair, field.name); 
+                if(@TypeOf(id) == u32) {
+                    switch (try db.getEntLocation(id)) {
+                        inline else => |loc| {
+                            const T = EntDb.getTypeByLocation(loc);
+                            var ent = try db.getEnt(T, id);
+                            ent.colliding = true;
+                            try db.setEnt(ent);
+                        }
+                    }
+                }
+            }
+        }
+
         Spec.draw(specs);
         if(config.show_fps) fps_box.draw(fps);
         try controller(config, .{.db = &db});
@@ -57,16 +77,14 @@ pub fn main(init: std.process.Init) !void {
 }
 
 fn controller(config: Config, data: anytype) !void {
-    _ = config;
-    const kp = raylib.getKeyPressed();
-    switch(kp) {
+    _ = config; 
+    switch(raylib.getKeyPressed()) {
         .r => {
-            try data.db.removeEnt(0);
+            try data.db.removeEnt(@as(u32, @intCast(data.db.len)) - 1);
         },
         else => {},
     }
 }
-
 
 fn initRaylib(config: Config) void {
     raylib.initWindow(config.window_width, config.window_height, "");

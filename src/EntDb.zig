@@ -2,18 +2,18 @@ const std = @import("std");
 const SmartSoa = @import("SmartSoA").SmartSoA;
 const SlotQueue = @import("SlotQueue.zig").SlotQueue;
 
-pub const EntDesc = struct {
-    name: []const u8,
-    T: type,
-};
-
-pub fn EntDb(comptime ent_descs: []const EntDesc) type {
+pub fn EntDb(comptime ent_types: []const type) type {
+    inline for(ent_types) |T| {
+        if(@typeInfo(T) != .@"struct") @compileError(@typeName(T) ++ " must be a struct\n");
+        if(!@hasDecl(T, "location")) @compileError(@typeName(T) ++ " must declare `pub const location: \"LocationName\" = \n");
+    }
+    
     const EntLoc = blk: {
-        var names: [ent_descs.len][]const u8 = undefined;
-        var values: [ent_descs.len]u8 = undefined;
+        var names: [ent_types.len][]const u8 = undefined;
+        var values: [ent_types.len]u8 = undefined;
 
-        for(ent_descs, &names, &values, 0..) |desc, *name, *value, i| {
-            name.* = desc.name;
+        for(ent_types, &names, &values, 0..) |ent_type, *name, *value, i| {
+            name.* = ent_type.location;
             value.* = @intCast(i);
         }
 
@@ -21,13 +21,13 @@ pub fn EntDb(comptime ent_descs: []const EntDesc) type {
     };
 
     const EntData = blk: {
-        var names: [ent_descs.len][]const u8 = undefined;
-        var types: [ent_descs.len]type = undefined;
-        var attrs: [ent_descs.len]std.builtin.Type.StructField.Attributes = undefined;
+        var names: [ent_types.len][]const u8 = undefined;
+        var types: [ent_types.len]type = undefined;
+        var attrs: [ent_types.len]std.builtin.Type.StructField.Attributes = undefined;
 
-        for(ent_descs, &names, &types, &attrs) |desc, *name, *t, *attr| {
-            name.* = desc.name;
-            t.* = *SmartSoa(desc.T);
+        for(ent_types, &names, &types, &attrs) |ent_type, *name, *t, *attr| {
+            name.* = ent_type.location;
+            t.* = *SmartSoa(ent_type);
             attr.* = .{};
         }
 
@@ -53,9 +53,9 @@ pub fn EntDb(comptime ent_descs: []const EntDesc) type {
             var self: Self = .{.allocator = allocator};
             self.slot_queue = try .init(allocator, ent_capacity);
 
-            inline for(std.meta.fields(EntData), ent_descs) |field, desc| {
+            inline for(std.meta.fields(EntData), ent_types) |field, ent_type| {
                 const field_ptr = &@field(self.ent_data, field.name);
-                field_ptr.* = try allocator.create(SmartSoa(desc.T));
+                field_ptr.* = try allocator.create(SmartSoa(ent_type));
                 field_ptr.*.* = .init();
             }
             return self;
@@ -70,8 +70,9 @@ pub fn EntDb(comptime ent_descs: []const EntDesc) type {
             self.slot_queue.deinit();
         }
 
-        pub fn append(self: *Self, ent_idx: u32, comptime ent_location: EntLocation, ent: anytype) !void {
-            const ent_db = @field(self.ent_data, @tagName(ent_location));
+        pub fn append(self: *Self, ent_idx: u32, comptime EntType: type, ent: anytype) !void {
+            const ent_location = getLocationByType(EntType);
+            const ent_db = @field(self.ent_data, EntType.location);
             var ent_cpy = ent;
             ent_cpy.id = try self.slot_queue.setNextSlot(ent_idx, ent_location);
 
@@ -79,33 +80,68 @@ pub fn EntDb(comptime ent_descs: []const EntDesc) type {
             self.len += 1;
         }
 
-        pub fn ensureTotalCapacity(self: *Self, comptime ent_type: EntLocation, capacity: usize) !void {
-            try self.ent_data.ents.ensureTotalCapacity(self.allocator, capacity);
-            const ent_db = @field(self.ent_data, @tagName(ent_type));
+        pub fn ensureTotalCapacity(self: *Self, comptime EntType: type, capacity: usize) !void {
+            const ent_db = @field(self.ent_data, EntType.location);
             try ent_db.ensureTotalCapacity(self.allocator, capacity);
         }
 
         pub fn removeEnt(self: *Self, id: u32) !void {
             const removed_slot = try self.slot_queue.sendSlotToQueue(id);
+            switch(removed_slot.ent_location) {
+                inline else => |loc| {
+                    const db = @field(self.ent_data, @tagName(loc));
+                    const removed_idx: usize = removed_slot.ent_idx;
+                    const last_idx = db.len - 1;
+                    const swapped_ent = if (removed_idx != last_idx) db.get(last_idx) else null;
 
-            // Go through each ent desc until ent_data field matches slot's ent location
-            inline for(ent_descs) |desc| {
-                const location_name = @tagName(removed_slot.ent_location);
-                if(std.mem.eql(u8, desc.name, location_name)) {
-                    const db = &@field(self.ent_data, desc.name);
-                    const swapped_ent_idx: ?u32 = db.swapAndPopIdx(removed_slot.ent_idx);
-
-                    if(swapped_ent_idx) |new_ent_idx| {
-                        const ent = db.get(id);
+                    _ = db.swapAndPopIdx(removed_idx);
+                    if(swapped_ent) |ent| {
                         const slot_of_swapped_ent = try self.slot_queue.getSlot(ent.id);
-                        slot_of_swapped_ent.ent_idx = new_ent_idx;
+                        slot_of_swapped_ent.ent_idx = @intCast(removed_idx);
                     }
+
+                    self.len -= 1;
                 }
             }
         }
 
-        pub fn getSubId(self: *Self, id: u32) u32 {
-            return self.ent_data.ents[id].index;
+        pub fn getEntLocation(self: *Self, id: u32) !EntLocation {
+            const slot = try self.slot_queue.getSlot(id);
+            return slot.ent_location;
+        }
+
+        pub fn getEnt(self: *Self, comptime EntType: type, id: u32) !EntType {
+            const db = self.getEntDb(EntType);
+            const ent_idx = try self.slot_queue.getSlotEntIdx(id);
+            const ent = db.get(ent_idx);
+            return ent;
+        }
+
+        pub fn setEnt(self: *Self, ent: anytype) !void {
+            const EntType = @TypeOf(ent);
+            const db = self.getEntDb(EntType);
+            const ent_idx = try self.slot_queue.getSlotEntIdx(ent.id);
+            db.set(ent, ent_idx);
+        }
+
+        pub fn getEntDb(self: *Self, comptime EntType: type) *SmartSoa(EntType) {
+            const db = @field(self.ent_data, EntType.location);
+            return db;
+        }
+
+        pub fn getEntIdx(self: *Self, id: u32) !u32 {
+            return try self.slot_queue.getSlotEntIdx(id);
+        }
+
+        pub fn getTypeByLocation(comptime ent_location: EntLocation) type {
+            inline for(ent_types) |T| {
+                if(std.mem.eql(u8, T.location, @tagName(ent_location))) return T;
+            }
+            unreachable;
+        }
+
+        pub fn getLocationByType(comptime EntType: type) EntLocation {
+            return std.meta.stringToEnum(EntLocation, EntType.location) orelse unreachable;
         }
     };
 }

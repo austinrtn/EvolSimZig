@@ -5,7 +5,7 @@ local config = {
     window_height = 800,
     target_fps = 60,
 
-    ent_count = 1000,
+    ent_count = 100,
 
     min_r = 4,
     max_r = 12,

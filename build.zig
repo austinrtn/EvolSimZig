@@ -69,7 +69,7 @@ pub fn build(b: *std.Build) void {
     });
     exe.root_module.addImport("SmartSoA", smart_soa.module("SmartSoA"));
 
-    const spacial_grid = b.dependency("spacial_grid", .{
+    const spacial_grid = b.dependency("SpacialGrid", .{
         .target = target,
         .optimize = optimize,
     });

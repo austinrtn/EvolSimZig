@@ -60,13 +60,18 @@ pub fn SlotQueue(comptime EntLocation: type) type {
             return slot;
         }
 
+        pub fn getSlotEntIdx(self: *Self, idx: u32) !u32 {
+            const slot = try self.getSlot(idx);
+            return slot.ent_idx;
+        }
+
         pub fn sendSlotToQueue(self: *Self, idx: u32) !Slot {
-            var slot = self.slots.items[idx];
+            const slot = &self.slots.items[idx];
             if(!slot.active) return error.InactiveSlot;
 
             slot.active = false;
             try self.queue.append(self.allocator, idx);
-            return slot;
+            return slot.*;
         }
     };
 }

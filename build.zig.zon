@@ -9,16 +9,16 @@
             .hash = "raylib_zig-6.0.0-KE8REDJ4BQBu7lKwYNt6R4j5ywPeS37zqW6zrtjCcRwH",
         },
         .smart_soa = .{
-            .url = "git+https://github.com/austinrtn/SmartSoA.git#389e1292dcef9028d2c9480ff6eba57c45e8946d",
-            .hash = "smart_soa-0.0.0-eFnK1ZV8AAAHniTxAXreV7qNt-ZWXWMfzZgVBTNWBrD1",
-        },
-        .spacial_grid = .{
-            .url = "git+https://github.com/austinrtn/SpacialGrid.git#c077c4c910b91b2d2cf4df20d22a04c83e2bc10a",
-            .hash = "SpacialGrid-0.0.0-YKVrGn-RAQD89JYouOU_XePfTbGR_6YiPJxa0acrLHFH",
+            .url = "git+https://github.com/austinrtn/SmartSoA.git#dcb02b4055c1acedda3e69163dac3b6d0436b19c",
+            .hash = "smart_soa-0.0.0-eFnK1biAAABfcB4nwi65lVZPtHNCnKCnd2ebwWuqfRbv",
         },
         .luajit_build = .{
             .url = "git+https://github.com/sackosoft/zig-luajit-build#83801ee5c76938eb8704de6ae667437e63744588",
             .hash = "luajit_build-1.1.8-HFjoU8lBAABZOIYvsm0OATsjlN0Fye4QYA86RuTy6uzl",
+        },
+        .SpacialGrid = .{
+            .url = "git+https://github.com/austinrtn/SpacialGrid#f77622082ae48ace2c074c89fdc869d1cb74ecba",
+            .hash = "SpacialGrid-0.0.0-YKVrGtiSAQDx7LTPy5yfhwesmaRLneEpo6mDBfpXMGiA",
         },
     },
     .paths = .{

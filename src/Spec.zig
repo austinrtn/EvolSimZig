@@ -7,6 +7,7 @@ const EntDb = @import("EntDb.zig").EntDb;
 
 pub const Spec = struct {
     const colors = [_]raylib.Color{.black, .red, .pink, .blue, .green, .purple,};
+    pub const location = "specs";
 
     x: f32,
     y: f32,
@@ -16,6 +17,14 @@ pub const Spec = struct {
     xvel: f32,
     yvel: f32,
     color: raylib.Color,
+    colliding: bool = false,
+
+    pub fn reset(specs: *SpecSoa) void {
+        const s = specs.allItems();
+        for(s.colliding) |*c| {
+            c.* = false;
+        }
+    }
 
     pub fn move(specs: *SpecSoa, ft: f32) void {
         const s = specs.manyItems(&.{.x, .y, .xvel, .yvel});
@@ -27,8 +36,9 @@ pub const Spec = struct {
 
     pub fn draw(specs: *SpecSoa) void {
         const s = specs.allItems();
-        for(s.x, s.y, s.r, s.color) |x, y, r, color| {
-            raylib.drawCircleV(raylib.Vector2.init(x, y), r, color);
+        for(s.x, s.y, s.r, s.color, s.colliding) |x, y, r, color, c| {
+            if(c) raylib.drawCircleV(raylib.Vector2.init(x, y), r, color)
+            else raylib.drawCircleV(raylib.Vector2.init(x, y), r, raylib.Color.gray);
         }
     }
 
@@ -59,12 +69,12 @@ pub const Spec = struct {
                 .id = @intCast(ent_db.len),
             };
 
-            try ent_db.append(@intCast(specs.len), .specs, spec);
+            try ent_db.append(@intCast(specs.len), Spec, spec);
         }
     }
 
-    // pub fn insert(specs: *SpecSoa, grid: anytype) !void {
-    //     const s = specs.allItems();
-    //     grid.insert.Circle.many()
-    // }
+    pub fn insert(specs: *SpecSoa, grid: anytype) !void {
+        const s = specs.allItems();
+        try grid.insert.Circle.many(s.id, s.x, s.y, s.r);
+    }
 };
