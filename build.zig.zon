@@ -17,8 +17,8 @@
             .hash = "luajit_build-1.1.8-HFjoU8lBAABZOIYvsm0OATsjlN0Fye4QYA86RuTy6uzl",
         },
         .SpacialGrid = .{
-            .url = "git+https://github.com/austinrtn/SpacialGrid#f77622082ae48ace2c074c89fdc869d1cb74ecba",
-            .hash = "SpacialGrid-0.0.0-YKVrGtiSAQDx7LTPy5yfhwesmaRLneEpo6mDBfpXMGiA",
+            .url = "git+https://github.com/austinrtn/SpacialGrid#31789ac9a8402363747180caa24dfe096c596e9b",
+            .hash = "SpacialGrid-0.0.0-YKVrGgWTAQACGimXTf4taDhjQV-3WmniXQp8Y75PH6hy",
         },
     },
     .paths = .{

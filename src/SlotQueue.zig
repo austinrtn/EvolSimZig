@@ -40,16 +40,18 @@ pub fn SlotQueue(comptime EntLocation: type) type {
                 slot.ent_idx = ent_idx;
                 slot.ent_location = ent_location;
                 slot.active = true;
-
                 return idx;
             }
 
+            const slot_idx: u32 = @intCast(self.slots.items.len);
             const new_slot: Slot = .{
-                .id = @intCast(self.slots.items.len),
+                .id = slot_idx,
                 .ent_idx = ent_idx,
                 .ent_location = ent_location,
                 .active = true,
             };
+
+            try self.slots.append(self.allocator, new_slot);
             return new_slot.id;
         }
 

@@ -1,14 +1,15 @@
-local pad = -100
+local pad = 50;
 
 local config = {
     window_width = 800,
     window_height = 800,
+    window_monitor = 1,
     target_fps = 60,
 
-    ent_count = 100,
+    ent_count = 1,
 
-    min_r = 4,
-    max_r = 12,
+    min_r = 26,
+    max_r = 32,
 
     min_vel = 8,
     max_vel =  12,

@@ -1,6 +1,7 @@
 pub const Config = struct {
     window_width: i32,
     window_height: i32,
+    window_monitor: i32,
     target_fps: i32,
 
     ent_count: usize,

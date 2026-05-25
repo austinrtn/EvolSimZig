@@ -1,43 +1,33 @@
 const std = @import("std");
-const ZigGrid = @import("ZigGridLib").ZigGridLib(.{}).SpacialGrid;
+const GameState = @import("GameState.zig").GameStateT;
+const ZigGridLib = @import("ZigGridLib").ZigGridLib(.{});
+const ZigGrid = ZigGridLib.SpacialGrid;
 const raylib = @import("raylib");
 const SmartSoa = @import("SmartSoA").SmartSoA;
 const lua = @import("lua");
 
 const Config = @import("config.zig").Config;
 const Spec = @import("Spec.zig").Spec;
-const EntDbType = @import("EntDb.zig").EntDb;
-const EntDb = EntDbType(&.{
-    Spec
-});
+const Food = @import("Food.zig").Food;
+const FpsBox = @import("FpsBox.zig").FpsBox;
 
 pub fn main(init: std.process.Init) !void {
     const allocator = init.gpa;
     const io = init.io;
-    const fps_box: FpsBox = .{};
-    var config: Config = undefined;
-    const L = try initLua(&config);
-    defer lua.lua_close(L);
+    
+    const state: *GameState = try .init(allocator, io);
+    defer state.deinit();
 
-    var grid = try ZigGrid.init(.{
-        .allocator = allocator,
-        .io = io,
-        .width = @floatFromInt(config.window_width),
-        .height = @floatFromInt(config.window_height),
-        .multi_threaded = true,
-        .cell_size_multiplier = 2,
-    });
-    defer grid.deinit();
+    const config = state.config;
+    const grid = state.grid;
 
     initRaylib(config);
     defer raylib.closeWindow();
+    
+    _ = try FpsBox.init(state);
 
-    var db = try EntDb.init(allocator, config.ent_count);
-    defer db.deinit();
-    const specs: *SmartSoa(Spec) = db.ent_data.specs;
-
-    try Spec.spawn(allocator, io, &db, config);
-    try Spec.insert(specs, grid);
+    try Spec.spawn(state);
+    try state.insertAll();
 
     try grid.updateCellSize(null);
     //loop
@@ -46,41 +36,38 @@ pub fn main(init: std.process.Init) !void {
         defer raylib.endDrawing();
 
         raylib.clearBackground(.ray_white);
-        const dt = raylib.getFrameTime();
-        const fps = raylib.getFPS();
+        state.update();
 
-        Spec.reset(specs);
-        Spec.move(specs, dt);
-        try Spec.insert(specs, grid);
-        const results = try grid.update();
+        Spec.reset(state);
+        Spec.move(state);
+        try state.insertAll();
         
+        const results = try grid.update();
         for(results.items) |pair| {
-            inline for(std.meta.fields(@TypeOf(pair))) |field| {
-                const id = @field(pair, field.name); 
-                if(@TypeOf(id) == u32) {
-                    switch (try db.getEntLocation(id)) {
-                        inline else => |loc| {
-                            const T = EntDb.getTypeByLocation(loc);
-                            var ent = try db.getEnt(T, id);
-                            ent.colliding = true;
-                            try db.setEnt(ent);
-                        }
-                    }
+            for([_]u32{pair.a, pair.b}) |id| {
+                inline for(GameState.Collidables) |T| {
+                    var ent = try state.db.getEnt(T, id);
+                    ent.colliding = true;
+                    try state.db.setEnt(ent);
                 }
             }
         }
 
-        Spec.draw(specs);
-        if(config.show_fps) fps_box.draw(fps);
-        try controller(config, .{.db = &db});
+        state.drawAll();
+        try state.db.flushAppendQueue();
+        try controller(state);
     }
 }
 
-fn controller(config: Config, data: anytype) !void {
-    _ = config; 
+fn controller(state: *GameState) !void {
+    const db = &state.db;
     switch(raylib.getKeyPressed()) {
         .r => {
-            try data.db.removeEnt(@as(u32, @intCast(data.db.len)) - 1);
+            try db.removeEnt(@as(u32, @intCast(db.len)) - 1);
+        },
+        .t => {
+            const spec: Spec = .getRandom(state);
+            try db.appendEnt(spec);
         },
         else => {},
     }
@@ -88,6 +75,19 @@ fn controller(config: Config, data: anytype) !void {
 
 fn initRaylib(config: Config) void {
     raylib.initWindow(config.window_width, config.window_height, "");
+    
+    const monitor_count = raylib.getMonitorCount();
+    if (config.window_monitor < 0 or config.window_monitor >= monitor_count) return;
+
+    raylib.setWindowMonitor(config.window_monitor);
+
+    const monitor_pos = raylib.getMonitorPosition(config.window_monitor);
+    const monitor_width = raylib.getMonitorWidth(config.window_monitor);
+    const monitor_height = raylib.getMonitorHeight(config.window_monitor);
+
+    const x = @as(i32, @intFromFloat(monitor_pos.x)) + @divTrunc(monitor_width - config.window_width, 2);
+    const y = @as(i32, @intFromFloat(monitor_pos.y)) + @divTrunc(monitor_height - config.window_height, 2);
+    raylib.setWindowPosition(x, y);
 
     raylib.setTraceLogLevel(.err);
     raylib.setTargetFPS(config.target_fps);
@@ -131,31 +131,3 @@ fn initLua(config: *Config) !*lua.struct_lua_State {
 
     return L;
 }
-
-const FpsBox = struct {
-    x: f32 = 0,
-    y: f32 = 0,
-    w: f32 = 25,
-    h: f32 = 25,
-    box_color: raylib.Color = .white,
-    outline_color: raylib.Color = .black,
-
-    font_size: f32 = 16,
-    font_color: raylib.Color = .black,
-
-    fn draw(self: @This(), fps: i32) void {
-        const rect: raylib.Rectangle = .{.x = self.x, .y = self.y, .width = self.w, .height = self.h};
-        raylib.drawRectangleRec(rect, self.box_color);
-        raylib.drawRectangleLinesEx(rect, 1, self.outline_color);
-
-        const font = raylib.getFontDefault() catch unreachable;
-        var buf: [256]u8 = undefined;
-        const fps_text = std.fmt.bufPrintSentinel(&buf, "{d}", .{fps}, 0) catch unreachable;
-        const text_size = raylib.measureTextEx(font, fps_text, self.font_size, 1);
-
-        const text_x = self.x + (self.w - text_size.x) * 0.5;
-        const text_y = self.y + (self.h - text_size.y) * 0.5;
-
-        raylib.drawTextEx(font, fps_text, .{.x = text_x, .y = text_y}, self.font_size, 1, .black);
-    }
-};
