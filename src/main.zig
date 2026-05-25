@@ -26,7 +26,12 @@ pub fn main(init: std.process.Init) !void {
     
     _ = try FpsBox.init(state);
 
-    try Spec.spawn(state);
+    const spec: Spec = .{
+        .x = 100,
+        .y = 100,
+        .r = 5,
+    };
+    try state.db.spawnEnt(spec);
     try state.insertAll();
 
     try grid.updateCellSize(null);
@@ -54,7 +59,7 @@ pub fn main(init: std.process.Init) !void {
         }
 
         state.drawAll();
-        try state.db.flushAppendQueue();
+        try state.db.flushAppendQueueAll();
         try controller(state);
     }
 }

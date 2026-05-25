@@ -18,11 +18,11 @@ pub const Spec = struct {
     x: f32,
     y: f32,
     r: f32,
-    id: u32,
+    id: u32 = undefined,
 
-    xvel: f32,
-    yvel: f32,
-    color: raylib.Color,
+    xvel: f32 = 0,
+    yvel: f32 = 0,
+    color: raylib.Color = .gray,
     colliding: bool = false,
 
     pub fn reset(state: *GameState) void {

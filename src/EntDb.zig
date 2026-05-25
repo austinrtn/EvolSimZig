@@ -1,6 +1,6 @@
 const std = @import("std");
 const SmartSoa = @import("SmartSoA").SmartSoA;
-const SlotQueue = @import("SlotQueue.zig").SlotQueue;
+const SlotQ = @import("SlotQueue.zig").SlotQueue;
 
 pub fn EntDb(comptime ent_types: []const type) type {
     inline for(ent_types) |T| {
@@ -44,35 +44,19 @@ pub fn EntDb(comptime ent_types: []const type) type {
         );
     };
 
-    const EntQueue = blk: {
-        var names: [ent_types.len][]const u8 = undefined;
-        var types: [ent_types.len]type = undefined;
-        var attrs: [ent_types.len]std.builtin.Type.StructField.Attributes = undefined;
-        
-        for(ent_types, &names, &types, &attrs) |ent_type, *name, *t, *attr| {
-            name.* = ent_type.location;
-            t.* = std.ArrayList(ent_type);
-            attr.* = .{};
-        }
-        
-        break :blk @Struct(
-            .auto,
-            null,
-            &names,
-            &types,
-            &attrs
-        );
-    };
+    const SpawnEntQueue = getEntQueue(ent_types, false);
+    const RemoveEntQueue = getEntQueue(ent_types, true);
 
     return struct {
         const Self = @This();
+        const SlotQueue = SlotQ(EntLocation);
         pub const EntLocation = EntLoc;
         
-        slot_queue: SlotQueue(EntLocation) = undefined,
+        slot_queue: SlotQueue = undefined,
         allocator: std.mem.Allocator,
         ent_data: EntData = undefined,
-        ent_append_queue: EntQueue = undefined,
-        ent_remove_queue: EntQueue = undefined,
+        ent_append_queue: SpawnEntQueue = undefined,
+        ent_remove_queue: RemoveEntQueue = undefined,
         len: usize = 0,
 
         pub fn init(allocator: std.mem.Allocator, ent_capacity: usize) !Self{
@@ -108,46 +92,97 @@ pub fn EntDb(comptime ent_types: []const type) type {
             try ent_db.ensureTotalCapacity(self.allocator, capacity);
         }
 
+        ///Directly adds entity to EntDb.  Can cause pointer invalidation and infinite loops 
+        /// if called while iterating through entities.
+        pub fn spawnEnt(self: *Self, ent: anytype) !void {
+            const EntType = @TypeOf(ent);
+            const ent_db = self.getEntDb(@TypeOf(ent));
+            const location = getLocationEnumByType(EntType);
+
+            try self.addEntToDb(location, EntType, ent, ent_db);
+        }
+
+        /// Queues entity to be added into the db upon queue flush.
         pub fn appendEnt(self: *Self, ent: anytype) !void {
             const EntType = @TypeOf(ent);
             try @field(self.ent_append_queue, EntType.location).append(self.allocator, ent);
         }
 
-        pub fn flushAppendQueue(self: *Self) !void {
-            inline for(ent_types) |T| {
-                const ent_db = self.getEntDb(T);
-                const location = getLocationEnumByType(T);
-                const queue: *std.ArrayList(T) = &@field(self.ent_append_queue, T.location);
-                defer queue.clearRetainingCapacity();
+        /// Flush append queues of all entity types within the data base,
+        /// adding them to the db
+        pub fn flushAppendQueueAll(self: *Self) !void {
+            inline for(ent_types) |T| try self.flushAppendQueue(T);
+        }
 
-                for(queue.items) |*ent| {
-                    const ent_idx: u32 = @intCast(ent_db.len);
-                    const new_id = try self.slot_queue.setNextSlot(ent_idx, location);
-                    ent.id = new_id;               
-                    try ent_db.append(self.allocator, ent.*);
-                    self.len += 1;
-                }
+        /// Flush appened queue of all entities of the specified type
+        pub fn flushAppendQueue(self: *Self, comptime EntType: type) !void {
+            const ent_db = self.getEntDb(EntType);
+            const location = getLocationEnumByType(EntType);
+            const queue: *std.ArrayList(EntType) = &@field(self.ent_append_queue, EntType.location);
+            defer queue.clearRetainingCapacity();
+
+            for(queue.items) |ent| try self.addEntToDb(location, EntType, ent, ent_db);
+        }
+
+        fn flushQueue(self: *Self, comptime EntType: type, queue: anytype) !void {
+            const ent_db = self.getEntDb(EntType);
+            const location = getLocationEnumByType(EntType);
+            defer queue.clearRetainingCapacity();
+
+            for(queue.items) |ent| {
+                if(@TypeOftry self.addEntToDb(location, EntType, ent, ent_db);
             }
         }
 
-        pub fn removeEnt(self: *Self, id: u32) !void {
-            const removed_slot = try self.slot_queue.sendSlotToQueue(id);
-            switch(removed_slot.ent_location) {
-                inline else => |loc| {
-                    const db = @field(self.ent_data, @tagName(loc));
-                    const removed_idx: usize = removed_slot.ent_idx;
-                    const last_idx = db.len - 1;
-                    const swapped_ent = if (removed_idx != last_idx) db.get(last_idx) else null;
+        fn addEntToDb(
+            self: *Self, 
+            location: EntLocation, 
+            comptime ent_type: type, 
+            ent: ent_type,
+            ent_db: *SmartSoa(ent_type)
+        ) !void {
+            var ent_cpy = ent;
+            const ent_idx: u32 = @intCast(ent_db.len);
+            const new_id = try self.slot_queue.setNextSlot(ent_idx, location);
+            ent_cpy.id = new_id;               
+            
+            try ent_db.append(self.allocator, ent_cpy);
+            self.len += 1;
+        }
 
-                    _ = db.swapAndPopIdx(removed_idx);
-                    if(swapped_ent) |ent| {
-                        const slot_of_swapped_ent = try self.slot_queue.getSlot(ent.id);
-                        slot_of_swapped_ent.ent_idx = @intCast(removed_idx);
-                    }
+        /// Directly deletes entity from DB.  Can cause errors if called
+        /// while itterating through entities.
+        pub fn deleteEnt(self: *Self, ent: anytype) !void {
+            const EntType = @TypeOf(ent);
+            const ent_db = self.getEntDb(ent);
 
-                    self.len -= 1;
-                }
+            self.deleteEntFromDb(EntType, ent_db, ent.id);
+        }
+
+        pub fn queueEntForDeletion(self: *Self, ent: anytype) !void {
+            const EntType = @TypeOf(ent);
+            try @field(self.ent_remove_queue, EntType.location).append(self.allocator, ent);
+        }
+
+
+        fn deleteEntFromDb(
+            self: *Self, 
+            comptime EntType: type, 
+            ent_db: *SmartSoa(EntType),
+            ent_id: u32,
+        ) !void {
+            const removed_slot = try self.slot_queue.sendSlotToQueue(ent_id);
+            const removed_idx: usize = removed_slot.ent_idx;
+            const last_idx = ent_db.len - 1;
+            const swapped_ent = if (removed_idx != last_idx) ent_db.get(last_idx) else null;
+
+            _ = ent_db.swapAndPopIdx(removed_idx);
+            if(swapped_ent) |ent| {
+                const slot_of_swapped_ent = try self.slot_queue.getSlot(ent.id);
+                slot_of_swapped_ent.ent_idx = @intCast(removed_idx);
             }
+
+            self.len -= 1;
         }
 
         pub fn getEntLocation(self: *Self, id: u32) !EntLocation {
@@ -190,4 +225,25 @@ pub fn EntDb(comptime ent_types: []const type) type {
             return std.meta.stringToEnum(EntLocation, EntType.location) orelse unreachable;
         }
     };
+}
+
+fn getEntQueue(comptime ent_types: []const type, comptime u32_only: bool) type {
+    var names: [ent_types.len][]const u8 = undefined;
+    var types: [ent_types.len]type = undefined;
+    var attrs: [ent_types.len]std.builtin.Type.StructField.Attributes = undefined;
+    
+    for(ent_types, &names, &types, &attrs) |ent_type, *name, *t, *attr| {
+        const T = if(u32_only) u32 else ent_type;
+        name.* = ent_type.location;
+        t.* = std.ArrayList(ent_type);
+        attr.* = .{};
+    }
+    
+    break :blk @Struct(
+        .auto,
+        null,
+        &names,
+        &types,
+        &attrs
+    );
 }
