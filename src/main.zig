@@ -59,7 +59,7 @@ pub fn main(init: std.process.Init) !void {
         }
 
         state.drawAll();
-        try state.db.flushAppendQueueAll();
+        try state.db.flushAll();
         try controller(state);
     }
 }
@@ -68,11 +68,11 @@ fn controller(state: *GameState) !void {
     const db = &state.db;
     switch(raylib.getKeyPressed()) {
         .r => {
-            try db.removeEnt(@as(u32, @intCast(db.len)) - 1);
+            try db.deleteEnt(db.ent_data.specs.get(0));
         },
         .t => {
             const spec: Spec = .getRandom(state);
-            try db.appendEnt(spec);
+            try db.queueEntForSpawn(spec);
         },
         else => {},
     }

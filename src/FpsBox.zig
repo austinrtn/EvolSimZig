@@ -24,7 +24,7 @@ pub const FpsBox = struct {
     pub fn init(state: *GameState) !Self {
         var self: Self = .{};
         self.font = try raylib.getFontDefault();
-        try state.db.appendEnt(self);
+        try state.db.queueEntForSpawn(self);
         return self;
     }
 

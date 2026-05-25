@@ -44,8 +44,8 @@ pub fn EntDb(comptime ent_types: []const type) type {
         );
     };
 
-    const SpawnEntQueue = getEntQueue(ent_types, false);
-    const RemoveEntQueue = getEntQueue(ent_types, true);
+    const SpawnQueue = getEntQueue(ent_types, false);
+    const DeleteQueue = getEntQueue(ent_types, true);
 
     return struct {
         const Self = @This();
@@ -55,8 +55,8 @@ pub fn EntDb(comptime ent_types: []const type) type {
         slot_queue: SlotQueue = undefined,
         allocator: std.mem.Allocator,
         ent_data: EntData = undefined,
-        ent_append_queue: SpawnEntQueue = undefined,
-        ent_remove_queue: RemoveEntQueue = undefined,
+        spawn_queue: SpawnQueue = undefined,
+        delete_queue: DeleteQueue = undefined,
         len: usize = 0,
 
         pub fn init(allocator: std.mem.Allocator, ent_capacity: usize) !Self{
@@ -69,8 +69,8 @@ pub fn EntDb(comptime ent_types: []const type) type {
                 field_ptr.*.* = .init();
             }
             
-            inline for(std.meta.fields(EntQueue)) |field| @field(self.ent_append_queue, field.name) = .empty;
-            inline for(std.meta.fields(EntQueue)) |field| @field(self.ent_remove_queue, field.name) = .empty;
+            inline for(std.meta.fields(SpawnQueue)) |field| @field(self.spawn_queue, field.name) = .empty;
+            inline for(std.meta.fields(DeleteQueue)) |field| @field(self.delete_queue, field.name) = .empty;
             
             return self;
         }
@@ -82,8 +82,8 @@ pub fn EntDb(comptime ent_types: []const type) type {
                 self.allocator.destroy(soa);
             }
             
-            inline for(std.meta.fields(EntQueue)) |field| @field(self.ent_append_queue, field.name).deinit(self.allocator);
-            inline for(std.meta.fields(EntQueue)) |field| @field(self.ent_remove_queue, field.name).deinit(self.allocator);
+            inline for(std.meta.fields(SpawnQueue)) |field| @field(self.spawn_queue, field.name).deinit(self.allocator);
+            inline for(std.meta.fields(DeleteQueue)) |field| @field(self.delete_queue, field.name).deinit(self.allocator);
             self.slot_queue.deinit();
         }
         
@@ -103,35 +103,43 @@ pub fn EntDb(comptime ent_types: []const type) type {
         }
 
         /// Queues entity to be added into the db upon queue flush.
-        pub fn appendEnt(self: *Self, ent: anytype) !void {
+        pub fn queueEntForSpawn(self: *Self, ent: anytype) !void {
             const EntType = @TypeOf(ent);
-            try @field(self.ent_append_queue, EntType.location).append(self.allocator, ent);
+            try @field(self.spawn_queue, EntType.location).append(self.allocator, ent);
+        }
+
+        pub fn flushAll(self: *Self) !void {
+            try self.flushSpawnQueueAll();
+            try self.flushDeletionQueueAll();
         }
 
         /// Flush append queues of all entity types within the data base,
         /// adding them to the db
-        pub fn flushAppendQueueAll(self: *Self) !void {
-            inline for(ent_types) |T| try self.flushAppendQueue(T);
+        pub fn flushSpawnQueueAll(self: *Self) !void {
+            inline for(ent_types) |T| try self.flushSpawnQueue(T);
         }
 
         /// Flush appened queue of all entities of the specified type
-        pub fn flushAppendQueue(self: *Self, comptime EntType: type) !void {
-            const ent_db = self.getEntDb(EntType);
-            const location = getLocationEnumByType(EntType);
-            const queue: *std.ArrayList(EntType) = &@field(self.ent_append_queue, EntType.location);
-            defer queue.clearRetainingCapacity();
-
-            for(queue.items) |ent| try self.addEntToDb(location, EntType, ent, ent_db);
+        pub fn flushSpawnQueue(self: *Self, comptime EntType: type) !void {
+            try self.flushQueue(EntType, &self.spawn_queue);
         }
 
         fn flushQueue(self: *Self, comptime EntType: type, queue: anytype) !void {
+            const QueueType = @TypeOf(queue);
+            if(QueueType != *SpawnQueue and QueueType != *DeleteQueue) 
+                @compileError(@typeName(QueueType) ++ ": Invalid queue type\n");
+            
             const ent_db = self.getEntDb(EntType);
             const location = getLocationEnumByType(EntType);
-            defer queue.clearRetainingCapacity();
+            
+            const list = &@field(queue, EntType.location);
 
-            for(queue.items) |ent| {
-                if(@TypeOftry self.addEntToDb(location, EntType, ent, ent_db);
+            for(list.items) |ent| {
+                if(@TypeOf(queue) == *SpawnQueue) try self.addEntToDb(location, EntType, ent, ent_db)
+                else try self.deleteEntFromDb(EntType, ent_db, ent);
             }
+            
+            list.clearRetainingCapacity();
         }
 
         fn addEntToDb(
@@ -154,16 +162,23 @@ pub fn EntDb(comptime ent_types: []const type) type {
         /// while itterating through entities.
         pub fn deleteEnt(self: *Self, ent: anytype) !void {
             const EntType = @TypeOf(ent);
-            const ent_db = self.getEntDb(ent);
+            const ent_db = self.getEntDb(EntType);
 
-            self.deleteEntFromDb(EntType, ent_db, ent.id);
+            try self.deleteEntFromDb(EntType, ent_db, ent.id);
         }
 
         pub fn queueEntForDeletion(self: *Self, ent: anytype) !void {
             const EntType = @TypeOf(ent);
-            try @field(self.ent_remove_queue, EntType.location).append(self.allocator, ent);
+            try @field(self.delete_queue, EntType.location).append(self.allocator, ent);
         }
 
+        pub fn flushDeletionQueueAll(self: *Self) !void {
+            inline for(ent_types) |T| try self.flushDeletionQueue(T);
+        }
+
+        pub fn flushDeletionQueue(self: *Self, comptime EntType: type) !void {
+            try self.flushQueue(EntType, &self.delete_queue);
+        }
 
         fn deleteEntFromDb(
             self: *Self, 
@@ -235,11 +250,11 @@ fn getEntQueue(comptime ent_types: []const type, comptime u32_only: bool) type {
     for(ent_types, &names, &types, &attrs) |ent_type, *name, *t, *attr| {
         const T = if(u32_only) u32 else ent_type;
         name.* = ent_type.location;
-        t.* = std.ArrayList(ent_type);
+        t.* = std.ArrayList(T);
         attr.* = .{};
     }
     
-    break :blk @Struct(
+    return @Struct(
         .auto,
         null,
         &names,
