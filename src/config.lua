@@ -3,7 +3,7 @@ local pad = 50;
 local config = {
     window_width = 800,
     window_height = 800,
-    window_monitor = 1,
+    window_monitor = 0,
     target_fps = 60,
 
     ent_count = 1,

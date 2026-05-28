@@ -20,18 +20,18 @@ pub const GameStateT = GameState(
 
 pub fn GameState(
     comptime GridConfig: ZigGridLib.SetupConfig,
-    comptime EntTypes: []const type, 
+    comptime EntTypes: []const type,
 ) type {
     const collidables = getDeclTypes(EntTypes, "collidable", bool);
     const renderables_unsorted = getDeclTypes(EntTypes, "renderable", bool);
     inline for(renderables_unsorted) |T| {
         if(!@hasDecl(T, "draw")) @compileError(@typeName(T) ++ " must contain function `draw(state: *GameState)`\n");
         if(!@hasDecl(T, "render_layer")) @compileError(@typeName(T) ++ " must contain field `render_layer` of type int\n");
-    } 
-    
+    }
+
     const renderables = comptime blk: {
         var sorted = renderables_unsorted;
-        
+
         std.mem.sort(type, &sorted, {}, struct {
             fn lessThan(_: void, lhs:type, rhs: type) bool {
                 return @field(lhs, "render_layer") < @field(rhs, "render_layer");
@@ -39,10 +39,10 @@ pub fn GameState(
         }.lessThan);
         break :blk sorted;
     };
-    
+
     return struct {
         const Self = @This();
-        
+
         pub const Ents = EntTypes;
         pub const Grid = ZigGridLib.ZigGridLib(GridConfig);
         pub const EntDb = EntDbType(EntTypes);
@@ -57,7 +57,7 @@ pub fn GameState(
         grid: *Grid.SpacialGrid = undefined,
         dt: f32 = 0,
         fps: i32 = 0,
-    
+
         pub fn init(allocator: std.mem.Allocator, io: std.Io) !*Self {
             var self: Self = .{ .allocator = allocator, .io = io };
             self.L = try initLua(&self.config);
@@ -71,7 +71,7 @@ pub fn GameState(
                 .multi_threaded = true,
                 .cell_size_multiplier = 2,
             });
-            
+
             const self_ptr = try allocator.create(Self);
             self_ptr.* = self;
             return self_ptr;
@@ -80,7 +80,7 @@ pub fn GameState(
         pub fn deinit(self: *Self) void {
             const allocator = self.allocator;
             lua.lua_close(self.L);
-            
+
             self.db.deinit();
             self.grid.deinit();
             allocator.destroy(self);
@@ -94,7 +94,7 @@ pub fn GameState(
         pub fn insertAll(self: *Self) !void {
             const db = &self.db;
             const grid = self.grid;
-            
+
             inline for(collidables) |EntT| {
                 switch(EntT.shape) {
                     .Circle => {
@@ -116,8 +116,8 @@ pub fn GameState(
             }
         }
 
-        pub fn drawAll(self: *Self) void {
-            inline for(renderables) |T| T.draw(self);
+        pub fn drawAll(self: *Self) !void {
+            inline for(renderables) |T| try T.draw(self);
         }
     };
 }
@@ -167,22 +167,22 @@ fn getDeclCount(comptime ent_types: []const type, comptime decl: []const u8) usi
     return i;
 }
 
-fn getDeclTypes(comptime ent_types: []const type, comptime decl: []const u8, comptime decl_type: type) 
+fn getDeclTypes(comptime ent_types: []const type, comptime decl: []const u8, comptime decl_type: type)
     [getDeclCount(ent_types, decl)]type {
-                                                            
+
     const count = getDeclCount(ent_types, decl);
     var col_ents: [count]type = undefined;
     var i: usize = 0;
     for(ent_types) |T| {
         if(@hasDecl(T, decl)) {
             const field = @field(T, decl);
-            if(@TypeOf(field) != decl_type) @compileError(@typeName(T) ++ ": field `" ++ decl ++ "` must be of type " ++ @typeName(decl_type) ++ "\n"); 
+            if(@TypeOf(field) != decl_type) @compileError(@typeName(T) ++ ": field `" ++ decl ++ "` must be of type " ++ @typeName(decl_type) ++ "\n");
             if(field == true) {
                 col_ents[i] = T;
                 i += 1;
             }
-        } 
+        }
     }
-    
+
     return col_ents;
 }

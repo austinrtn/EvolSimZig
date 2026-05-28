@@ -3,21 +3,21 @@ const SmartSoa = @import("SmartSoA").SmartSoA;
 const SlotQ = @import("SlotQueue.zig").SlotQueue;
 
 pub fn EntDb(comptime ent_types: []const type) type {
-    inline for(ent_types) |T| {
-        if(@typeInfo(T) != .@"struct") @compileError(@typeName(T) ++ " must be a struct\n");
-        if(!@hasDecl(T, "location")) @compileError(@typeName(T) ++ " must declare `pub const location: []const u8 = \"LocationName\";`\n");
-        if(!@hasField(T, "id")) @compileError(@typeName(T) ++ " must contain field `id: u32`\n")
-        else if(@FieldType(T, "id") != u32) @compileError(@typeName(T) ++ ": field `id` must be of type u32\n");
-        // if(!@hasField(T, "colliding")) @compileError(@typeName(T) ++ " must contain field `colliding: bool`\n")
-        // else if(@FieldType(T, "colliding") != bool) @compileError(@typeName(T) ++ ": field `colliding` must be of type bool. \n");
-    }
-    
+    // inline for(ent_types) |T| {
+    //     if(@typeInfo(T) != .@"struct") @compileError(@typeName(T) ++ " must be a struct\n");
+    //     if(!@hasDecl(T, "location")) @compileError(@typeName(T) ++ " must declare `pub const location: []const u8 = \"LocationName\";`\n");
+    //     if(!@hasField(T, "id")) @compileError(@typeName(T) ++ " must contain field `id: u32`\n")
+    //     else if(@FieldType(T, "id") != u32) @compileError(@typeName(T) ++ ": field `id` must be of type u32\n");
+    //     if(!@hasField(T, "colliding")) @compileError(@typeName(T) ++ " must contain field `colliding: bool`\n")
+    //     else if(@FieldType(T, "colliding") != bool) @compileError(@typeName(T) ++ ": field `colliding` must be of type bool. \n");
+    // }
+
     const EntLoc = blk: {
         var names: [ent_types.len][]const u8 = undefined;
         var values: [ent_types.len]u8 = undefined;
 
         for(ent_types, &names, &values, 0..) |ent_type, *name, *value, i| {
-            name.* = ent_type.location;
+            name.* = ent_type.Name;
             value.* = @intCast(i);
         }
 
@@ -30,7 +30,7 @@ pub fn EntDb(comptime ent_types: []const type) type {
         var attrs: [ent_types.len]std.builtin.Type.StructField.Attributes = undefined;
 
         for(ent_types, &names, &types, &attrs) |ent_type, *name, *t, *attr| {
-            name.* = ent_type.location;
+            name.* = ent_type.Name;
             t.* = *SmartSoa(ent_type);
             attr.* = .{};
         }
@@ -51,7 +51,7 @@ pub fn EntDb(comptime ent_types: []const type) type {
         const Self = @This();
         const SlotQueue = SlotQ(EntLocation);
         pub const EntLocation = EntLoc;
-        
+
         slot_queue: SlotQueue = undefined,
         allocator: std.mem.Allocator,
         ent_data: EntData = undefined,
@@ -68,10 +68,10 @@ pub fn EntDb(comptime ent_types: []const type) type {
                 field_ptr.* = try allocator.create(SmartSoa(ent_type));
                 field_ptr.*.* = .init();
             }
-            
+
             inline for(std.meta.fields(SpawnQueue)) |field| @field(self.spawn_queue, field.name) = .empty;
             inline for(std.meta.fields(DeleteQueue)) |field| @field(self.delete_queue, field.name) = .empty;
-            
+
             return self;
         }
 
@@ -81,18 +81,18 @@ pub fn EntDb(comptime ent_types: []const type) type {
                 soa.deinit(self.allocator);
                 self.allocator.destroy(soa);
             }
-            
+
             inline for(std.meta.fields(SpawnQueue)) |field| @field(self.spawn_queue, field.name).deinit(self.allocator);
             inline for(std.meta.fields(DeleteQueue)) |field| @field(self.delete_queue, field.name).deinit(self.allocator);
             self.slot_queue.deinit();
         }
-        
+
         pub fn ensureTotalCapacity(self: *Self, comptime EntType: type, capacity: usize) !void {
-            const ent_db = @field(self.ent_data, EntType.location);
+            const ent_db = @field(self.ent_data, EntType.Name);
             try ent_db.ensureTotalCapacity(self.allocator, capacity);
         }
 
-        ///Directly adds entity to EntDb.  Can cause pointer invalidation and infinite loops 
+        ///Directly adds entity to EntDb.  Can cause pointer invalidation and infinite loops
         /// if called while iterating through entities.
         pub fn spawnEnt(self: *Self, ent: anytype) !void {
             const EntType = @TypeOf(ent);
@@ -105,7 +105,7 @@ pub fn EntDb(comptime ent_types: []const type) type {
         /// Queues entity to be added into the db upon queue flush.
         pub fn queueEntForSpawn(self: *Self, ent: anytype) !void {
             const EntType = @TypeOf(ent);
-            try @field(self.spawn_queue, EntType.location).append(self.allocator, ent);
+            try @field(self.spawn_queue, EntType.Name).append(self.allocator, ent);
         }
 
         pub fn flushAll(self: *Self) !void {
@@ -126,34 +126,34 @@ pub fn EntDb(comptime ent_types: []const type) type {
 
         fn flushQueue(self: *Self, comptime EntType: type, queue: anytype) !void {
             const QueueType = @TypeOf(queue);
-            if(QueueType != *SpawnQueue and QueueType != *DeleteQueue) 
+            if(QueueType != *SpawnQueue and QueueType != *DeleteQueue)
                 @compileError(@typeName(QueueType) ++ ": Invalid queue type\n");
-            
+
             const ent_db = self.getEntDb(EntType);
             const location = getLocationEnumByType(EntType);
-            
-            const list = &@field(queue, EntType.location);
+
+            const list = &@field(queue, EntType.Name);
 
             for(list.items) |ent| {
                 if(@TypeOf(queue) == *SpawnQueue) try self.addEntToDb(location, EntType, ent, ent_db)
                 else try self.deleteEntFromDb(EntType, ent_db, ent);
             }
-            
+
             list.clearRetainingCapacity();
         }
 
         fn addEntToDb(
-            self: *Self, 
-            location: EntLocation, 
-            comptime ent_type: type, 
+            self: *Self,
+            location: EntLocation,
+            comptime ent_type: type,
             ent: ent_type,
             ent_db: *SmartSoa(ent_type)
         ) !void {
             var ent_cpy = ent;
             const ent_idx: u32 = @intCast(ent_db.len);
             const new_id = try self.slot_queue.setNextSlot(ent_idx, location);
-            ent_cpy.id = new_id;               
-            
+            ent_cpy.fields.id = new_id;
+
             try ent_db.append(self.allocator, ent_cpy);
             self.len += 1;
         }
@@ -164,12 +164,12 @@ pub fn EntDb(comptime ent_types: []const type) type {
             const EntType = @TypeOf(ent);
             const ent_db = self.getEntDb(EntType);
 
-            try self.deleteEntFromDb(EntType, ent_db, ent.id);
+            try self.deleteEntFromDb(EntType, ent_db, ent.fields.id);
         }
 
         pub fn queueEntForDeletion(self: *Self, ent: anytype) !void {
             const EntType = @TypeOf(ent);
-            try @field(self.delete_queue, EntType.location).append(self.allocator, ent);
+            try @field(self.delete_queue, EntType.Name).append(self.allocator, ent);
         }
 
         pub fn flushDeletionQueueAll(self: *Self) !void {
@@ -181,8 +181,8 @@ pub fn EntDb(comptime ent_types: []const type) type {
         }
 
         fn deleteEntFromDb(
-            self: *Self, 
-            comptime EntType: type, 
+            self: *Self,
+            comptime EntType: type,
             ent_db: *SmartSoa(EntType),
             ent_id: u32,
         ) !void {
@@ -193,7 +193,7 @@ pub fn EntDb(comptime ent_types: []const type) type {
 
             _ = ent_db.swapAndPopIdx(removed_idx);
             if(swapped_ent) |ent| {
-                const slot_of_swapped_ent = try self.slot_queue.getSlot(ent.id);
+                const slot_of_swapped_ent = try self.slot_queue.getSlot(ent.fields.id);
                 slot_of_swapped_ent.ent_idx = @intCast(removed_idx);
             }
 
@@ -216,12 +216,12 @@ pub fn EntDb(comptime ent_types: []const type) type {
         pub fn setEnt(self: *Self, ent: anytype) !void {
             const EntType = @TypeOf(ent);
             const db = self.getEntDb(EntType);
-            const ent_idx = try self.slot_queue.getSlotEntIdx(ent.id);
+            const ent_idx = try self.slot_queue.getSlotEntIdx(ent.fields.id);
             db.set(ent, ent_idx);
         }
 
         pub fn getEntDb(self: *Self, comptime EntType: type) *SmartSoa(EntType) {
-            const db = @field(self.ent_data, EntType.location);
+            const db = @field(self.ent_data, EntType.Name);
             return db;
         }
 
@@ -231,13 +231,13 @@ pub fn EntDb(comptime ent_types: []const type) type {
 
         pub fn getTypeByLocationEnum(comptime ent_location: EntLocation) type {
             inline for(ent_types) |T| {
-                if(std.mem.eql(u8, T.location, @tagName(ent_location))) return T;
+                if(std.mem.eql(u8, T.Name, @tagName(ent_location))) return T;
             }
             unreachable;
         }
 
         pub fn getLocationEnumByType(comptime EntType: type) EntLocation {
-            return std.meta.stringToEnum(EntLocation, EntType.location) orelse unreachable;
+            return std.meta.stringToEnum(EntLocation, EntType.Name) orelse unreachable;
         }
     };
 }
@@ -246,14 +246,14 @@ fn getEntQueue(comptime ent_types: []const type, comptime u32_only: bool) type {
     var names: [ent_types.len][]const u8 = undefined;
     var types: [ent_types.len]type = undefined;
     var attrs: [ent_types.len]std.builtin.Type.StructField.Attributes = undefined;
-    
+
     for(ent_types, &names, &types, &attrs) |ent_type, *name, *t, *attr| {
         const T = if(u32_only) u32 else ent_type;
-        name.* = ent_type.location;
+        name.* = ent_type.Name;
         t.* = std.ArrayList(T);
         attr.* = .{};
     }
-    
+
     return @Struct(
         .auto,
         null,

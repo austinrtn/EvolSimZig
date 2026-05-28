@@ -7,14 +7,14 @@ pub const FpsBox = struct {
     pub const location = "boxes";
     pub const renderable = true;
     pub const render_layer = 100;
-    
+
     x: f32 = 0,
     y: f32 = 0,
     w: f32 = 25,
     h: f32 = 25,
     id: u32 = 1_000_000,
     font: raylib.Font = undefined,
-    
+
     box_color: raylib.Color = .white,
     outline_color: raylib.Color = .black,
 
@@ -28,14 +28,14 @@ pub const FpsBox = struct {
         return self;
     }
 
-    pub fn draw(state: *GameState) void {
+    pub fn draw(state: *GameState) !void {
         const db = state.db.getEntDb(Self);
         if(db.len == 0) return;
         if(!state.config.show_fps) return;
-        
+
         const self: Self = db.get(0);
         const rect: raylib.Rectangle = .{.x = self.x, .y = self.y, .width = self.w, .height = self.h};
-        
+
         raylib.drawRectangleRec(rect, self.box_color);
         raylib.drawRectangleLinesEx(rect, 1, self.outline_color);
 

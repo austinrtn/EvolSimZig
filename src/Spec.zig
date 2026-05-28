@@ -11,7 +11,7 @@ pub const Spec = struct {
     pub const collidable = true;
     pub const renderable = true;
     pub const render_layer = 1;
-    
+
     pub const shape: GameState.Grid.ShapeType = .Circle;
     const colors = [_]raylib.Color{.black, .red, .pink, .blue, .green, .purple,};
 
@@ -28,7 +28,7 @@ pub const Spec = struct {
     pub fn reset(state: *GameState) void {
         const specs_db = state.db.getEntDb(Self);
         const s = specs_db.items(.colliding);
-        
+
         for(s) |*colliding| colliding.* = false;
     }
 
@@ -41,7 +41,7 @@ pub const Spec = struct {
         }
     }
 
-    pub fn draw(state: *GameState) void {
+    pub fn draw(state: *GameState) !void {
         const specs = state.db.getEntDb(Self);
         const s = specs.allItems();
         for(s.x, s.y, s.r, s.color, s.colliding) |x, y, r, color, c| {
@@ -52,12 +52,12 @@ pub const Spec = struct {
 
     pub fn spawn(state: *GameState) !void {
         const db = &state.db;
-        
+
         for(0..state.config.ent_count) |_| {
             const spec = getRandom(state);
             try db.appendEnt(spec);
         }
-        
+
         try db.flushAppendQueue();
     }
 
@@ -65,7 +65,7 @@ pub const Spec = struct {
         const config = state.config;
         const rand = std.Random.IoSource{.io = state.io};
         const rng = rand.interface();
-        
+
         const x = config.min_x + rng.float(f32) * (config.max_x - config.min_x);
         const y = config.min_y + rng.float(f32) * (config.max_y - config.min_y);
         const r = config.min_r + rng.float(f32) * (config.max_r - config.min_r);
